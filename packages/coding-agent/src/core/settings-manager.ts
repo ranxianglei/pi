@@ -40,6 +40,7 @@ export interface TerminalSettings {
 	imageWidthCells?: number; // default: 60 (preferred inline image width in terminal cells)
 	clearOnShrink?: boolean; // default: false (clear empty rows when content shrinks)
 	showTerminalProgress?: boolean; // default: false (OSC 9;4 terminal progress indicators)
+	messageRenderLimit?: number; // default: 0 (no limit; only this many trailing messages are rendered to the chat)
 }
 
 export interface ImageSettings {
@@ -1060,6 +1061,14 @@ export class SettingsManager {
 
 	getThinkingBudgets(): ThinkingBudgetsSettings | undefined {
 		return this.settings.thinkingBudgets;
+	}
+
+	getMessageRenderLimit(): number {
+		const limit = this.settings.terminal?.messageRenderLimit;
+		if (typeof limit !== "number" || !Number.isFinite(limit) || limit < 0) {
+			return 0;
+		}
+		return Math.floor(limit);
 	}
 
 	getShowImages(): boolean {

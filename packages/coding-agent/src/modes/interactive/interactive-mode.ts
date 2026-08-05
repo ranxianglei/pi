@@ -3538,7 +3538,27 @@ export class InteractiveMode {
 			this.updateEditorBorderColor();
 		}
 
-		for (const item of items) {
+		// Tail-only rendering: when messageRenderLimit > 0 and the session exceeds
+		// it, render only the trailing N messages plus a notice. The full history
+		// stays in the session file; older entries are simply not materialized as
+		// components, avoiding O(n) rebuild on every open / rebuild.
+		const renderLimit = this.settingsManager.getMessageRenderLimit();
+		let itemsToRender: readonly RenderSessionItem[] = items;
+		let hiddenCount = 0;
+		if (renderLimit > 0 && items.length > renderLimit) {
+			itemsToRender = items.slice(items.length - renderLimit);
+			hiddenCount = items.length - itemsToRender.length;
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(
+				new Text(
+					theme.fg("dim", `… ${hiddenCount} earlier message${hiddenCount === 1 ? "" : "s"} not shown (kept in session)`),
+					1,
+					0,
+				),
+			);
+		}
+
+		for (const item of itemsToRender) {
 			if (isCustomSessionEntry(item)) {
 				this.addCustomEntryToChat(item);
 				continue;
