@@ -3251,12 +3251,14 @@ export class AgentSession {
 			mkdirSync(dir, { recursive: true });
 		}
 
+		const parentSession = this.sessionManager.getParentSessionPath();
 		const header: SessionHeader = {
 			type: "session",
 			version: CURRENT_SESSION_VERSION,
 			id: this.sessionManager.getSessionId(),
 			timestamp: new Date().toISOString(),
 			cwd: this.sessionManager.getCwd(),
+			...(parentSession ? { parentSession } : {}),
 		};
 
 		const branchEntries = this.sessionManager.getBranch();
