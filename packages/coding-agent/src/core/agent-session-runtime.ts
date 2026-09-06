@@ -1,5 +1,5 @@
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { resolvePath } from "../utils/paths.ts";
 import type { AgentSession } from "./agent-session.ts";
 import type { AgentSessionRuntimeDiagnostic, AgentSessionServices } from "./agent-session-services.ts";
@@ -71,6 +71,35 @@ function extractUserMessageText(content: string | Array<{ type: string; text?: s
  * and apply the next runtime. If creation fails, the error is propagated to the
  * caller. The caller is responsible for user-facing error handling.
  */
+/**
+ * Copy sibling metadata files that share the session file's basename
+ * (`${basename}.<anything>`) next to the imported copy. Best-effort:
+ * unreadable entries and directories are skipped; failures never abort
+ * the import.
+ */
+function copySessionSidecars(sourceSessionFile: string, destinationSessionFile: string): void {
+	const sourceDir = dirname(sourceSessionFile);
+	const base = basename(sourceSessionFile);
+	let siblingNames: string[];
+	try {
+		siblingNames = readdirSync(sourceDir);
+	} catch {
+		return;
+	}
+	const destinationDir = dirname(destinationSessionFile);
+	for (const name of siblingNames) {
+		if (!name.startsWith(`${base}.`)) continue;
+		const source = join(sourceDir, name);
+		try {
+			if (!statSync(source).isFile()) continue;
+			copyFileSync(source, join(destinationDir, name));
+		} catch {
+			// Best-effort: a sidecar that cannot be read or copied must not
+			// fail the session import itself.
+		}
+	}
+}
+
 export class AgentSessionRuntime {
 	private rebindSession?: (session: AgentSession) => Promise<void>;
 	private beforeSessionInvalidate?: () => void;
@@ -378,6 +407,11 @@ export class AgentSessionRuntime {
 		const previousSessionFile = this.session.sessionFile;
 		if (resolve(destinationPath) !== resolvedPath) {
 			copyFileSync(resolvedPath, destinationPath);
+			// Extension metadata sidecars (e.g. `${sessionFile}.acp.json`) are keyed
+			// by the session file basename and must follow the session across
+			// import, or adapters resume with empty state and rebuild it from
+			// scratch (re-compressing already-compressed content, etc.).
+			copySessionSidecars(resolvedPath, destinationPath);
 		}
 
 		const sessionManager = SessionManager.open(destinationPath, sessionDir, cwdOverride);

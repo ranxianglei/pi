@@ -1012,6 +1012,19 @@ export class SessionManager {
 		return this.sessionFile;
 	}
 
+	/**
+	 * parentSession path recorded in this session's header, if any.
+	 * Used by exportToJsonl to preserve session lineage through exports.
+	 */
+	getParentSessionPath(): string | undefined {
+		if (!this.sessionFile) return undefined;
+		try {
+			return readSessionHeader(this.sessionFile)?.parentSession;
+		} catch {
+			return undefined;
+		}
+	}
+
 	_persist(entry: SessionEntry): void {
 		if (!this.persist || !this.sessionFile) return;
 
