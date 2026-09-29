@@ -505,7 +505,26 @@ function parseSessionEntryLine(line: string): FileEntry | null {
 	try {
 		return JSON.parse(line) as FileEntry;
 	} catch {
-		// Skip malformed lines
+		// Salvage entries whose JSON payload is intact but prefixed with garbage
+		// bytes. Concurrent appenders writing the same session file (core plus
+		// extensions, or two pi processes on one session) can leave non-JSON bytes
+		// before an otherwise valid entry. Dropping the line silently breaks the
+		// parent chain at that point and hides the rest of the session.
+		const braceIndex = line.indexOf("{");
+		if (braceIndex > 0) {
+			try {
+				const salvaged = JSON.parse(line.slice(braceIndex)) as FileEntry;
+				if (
+					salvaged !== null &&
+					typeof salvaged === "object" &&
+					typeof (salvaged as { type?: unknown }).type === "string"
+				) {
+					return salvaged;
+				}
+			} catch {
+				// Unrecoverable line
+			}
+		}
 		return null;
 	}
 }
