@@ -204,6 +204,24 @@ type CompactionQueuedMessage = {
 
 type RenderSessionItem = AgentMessage | Extract<SessionEntry, { type: "custom" }>;
 
+/**
+ * Maximum number of entries replayed into terminal scrollback when rendering
+ * the initial session view. Everything before this is omitted from the
+ * scrollback (still available via /tree, export, and the session file) so that
+ * opening a large session does not block the terminal for the full transcript.
+ */
+const MAX_INITIAL_REPLAY_ENTRIES = 500;
+
+/**
+ * Compute the initial scrollback slice. Tool results whose call falls before
+ * the slice are skipped by renderSessionItems (no pending component), so no
+ * boundary alignment is needed.
+ */
+function initialReplaySlice(entries: readonly SessionEntry[]): SessionEntry[] {
+	if (entries.length <= MAX_INITIAL_REPLAY_ENTRIES) return [...entries];
+	return entries.slice(entries.length - MAX_INITIAL_REPLAY_ENTRIES);
+}
+
 function isCustomSessionEntry(item: RenderSessionItem): item is Extract<SessionEntry, { type: "custom" }> {
 	return "type" in item && item.type === "custom";
 }
@@ -3656,9 +3674,33 @@ export class InteractiveMode {
 
 	renderInitialMessages(): void {
 		const entries = this.sessionManager.buildContextEntries();
-		this.renderSessionEntries(entries, {
+
+		// Editor input history must cover the full transcript even when scrollback
+		// replay below is capped. renderSessionEntries must not populate history
+		// again (addToHistory only dedupes consecutive entries).
+		for (const entry of entries) {
+			if (entry.type !== "message") continue;
+			const message = entry.message;
+			if (message.role !== "user") continue;
+			const text = this.getUserMessageText(message);
+			if (text) this.editor.addToHistory(text);
+		}
+
+		const rendered = initialReplaySlice(entries);
+		const omitted = entries.length - rendered.length;
+		if (omitted > 0) {
+			this.chatContainer.addChild(
+				new Text(
+					theme.fg("secondary", `… ${omitted} earlier entries not replayed (session file keeps the full history)`),
+					1,
+					0,
+				),
+			);
+			this.chatContainer.addChild(new Spacer(1));
+		}
+
+		this.renderSessionEntries(rendered, {
 			updateFooter: true,
-			populateHistory: true,
 		});
 		this.renderProjectTrustWarningIfNeeded();
 

@@ -64,6 +64,36 @@ function isPrintableAscii(str: string): boolean {
 	return true;
 }
 
+/**
+ * Fast width computation for strings containing only printable ASCII, tabs,
+ * and well-formed CSI/OSC/APC escape sequences. This is the common shape of
+ * colored tool output. Returns -1 when the string contains anything else so
+ * the caller can fall back to the general path.
+ */
+function asciiWithEscapesWidth(str: string): number {
+	let width = 0;
+	let i = 0;
+	const n = str.length;
+	while (i < n) {
+		const code = str.charCodeAt(i);
+		if (code === 0x1b) {
+			const ansi = extractAnsiCode(str, i);
+			if (!ansi) return -1;
+			i += ansi.length;
+			continue;
+		}
+		if (code === 0x09) {
+			width += 3;
+			i++;
+			continue;
+		}
+		if (code < 0x20 || code > 0x7e) return -1;
+		width++;
+		i++;
+	}
+	return width;
+}
+
 function truncateFragmentToWidth(text: string, maxWidth: number): { text: string; width: number } {
 	if (maxWidth <= 0 || text.length === 0) {
 		return { text: "", width: 0 };
@@ -246,6 +276,12 @@ export function visibleWidth(str: string): number {
 		return str.length;
 	}
 
+	// Fast path: printable ASCII with ANSI escape sequences and/or tabs
+	const escapesWidth = asciiWithEscapesWidth(str);
+	if (escapesWidth >= 0) {
+		return escapesWidth;
+	}
+
 	// Check cache
 	const cached = widthCache.get(str);
 	if (cached !== undefined) {
@@ -410,8 +446,13 @@ export function extractAnsiCode(str: string, pos: number): { code: string; lengt
 	// CSI sequence: ESC [ ... m/G/K/H/J
 	if (next === "[") {
 		let j = pos + 2;
-		while (j < str.length && !/[mGKHJ]/.test(str[j]!)) j++;
-		if (j < str.length) return { code: str.substring(pos, j + 1), length: j + 1 - pos };
+		while (j < str.length) {
+			const c = str.charCodeAt(j);
+			if (c === 0x6d || c === 0x47 || c === 0x4b || c === 0x48 || c === 0x4a) {
+				return { code: str.substring(pos, j + 1), length: j + 1 - pos };
+			}
+			j++;
+		}
 		return null;
 	}
 
